@@ -1619,10 +1619,10 @@ public:
   void set(Http::RequestHeaderMap&, bool) override {}
   void setInResponse(Http::ResponseHeaderMap&, const Http::RequestHeaderMap&) override {}
   bool modBy(const Http::RequestHeaderMap&, uint64_t&, uint64_t) override { return false; }
-  Http::TraceStatus getTraceStatus(const Http::RequestHeaderMap&) override {
-    return Http::TraceStatus::Sampled;
+  Tracing::Reason getTraceReason(const Http::RequestHeaderMap&) override {
+    return Tracing::Reason::Sampled;
   }
-  void setTraceStatus(Http::RequestHeaderMap&, Http::TraceStatus) override {}
+  void setTraceReason(Http::RequestHeaderMap&, Tracing::Reason) override {}
 
   std::string testField() { return config_.test_field(); }
 

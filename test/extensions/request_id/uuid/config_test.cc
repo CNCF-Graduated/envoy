@@ -1,7 +1,8 @@
 #include <string>
 
 #include "common/common/random_generator.h"
-#include "common/http/request_id_extension_uuid_impl.h"
+
+#include "extensions/request_id/uuid/config.h"
 
 #include "test/mocks/common.h"
 #include "test/test_common/utility.h"
@@ -11,63 +12,68 @@
 using testing::Return;
 
 namespace Envoy {
-namespace Http {
+namespace Extensions {
+namespace RequestId {
 
 TEST(UUIDRequestIDExtensionTest, SetRequestID) {
   testing::StrictMock<Random::MockRandomGenerator> random;
-  UUIDRequestIDExtension uuid_utils(random);
-  TestRequestHeaderMapImpl request_headers;
+  UUIDRequestIDExtension uuid_utils(envoy::extensions::request_id::uuid::v3::UuidRequestIdConfig(),
+                                    random);
+  Http::TestRequestHeaderMapImpl request_headers;
 
   EXPECT_CALL(random, uuid()).WillOnce(Return("first-request-id"));
   uuid_utils.set(request_headers, true);
-  EXPECT_EQ("first-request-id", request_headers.get_(Headers::get().RequestId));
+  EXPECT_EQ("first-request-id", request_headers.get_(Http::Headers::get().RequestId));
 
   EXPECT_CALL(random, uuid()).WillOnce(Return("second-request-id"));
   uuid_utils.set(request_headers, true);
-  EXPECT_EQ("second-request-id", request_headers.get_(Headers::get().RequestId));
+  EXPECT_EQ("second-request-id", request_headers.get_(Http::Headers::get().RequestId));
 }
 
 TEST(UUIDRequestIDExtensionTest, EnsureRequestID) {
   testing::StrictMock<Random::MockRandomGenerator> random;
-  UUIDRequestIDExtension uuid_utils(random);
-  TestRequestHeaderMapImpl request_headers;
+  UUIDRequestIDExtension uuid_utils(envoy::extensions::request_id::uuid::v3::UuidRequestIdConfig(),
+                                    random);
+  Http::TestRequestHeaderMapImpl request_headers;
 
   EXPECT_CALL(random, uuid()).WillOnce(Return("first-request-id"));
   uuid_utils.set(request_headers, false);
-  EXPECT_EQ("first-request-id", request_headers.get_(Headers::get().RequestId));
+  EXPECT_EQ("first-request-id", request_headers.get_(Http::Headers::get().RequestId));
 
   EXPECT_CALL(random, uuid()).Times(0);
   uuid_utils.set(request_headers, false);
-  EXPECT_EQ("first-request-id", request_headers.get_(Headers::get().RequestId));
+  EXPECT_EQ("first-request-id", request_headers.get_(Http::Headers::get().RequestId));
 }
 
 TEST(UUIDRequestIDExtensionTest, PreserveRequestIDInResponse) {
   testing::StrictMock<Random::MockRandomGenerator> random;
-  UUIDRequestIDExtension uuid_utils(random);
-  TestRequestHeaderMapImpl request_headers;
-  TestResponseHeaderMapImpl response_headers;
+  UUIDRequestIDExtension uuid_utils(envoy::extensions::request_id::uuid::v3::UuidRequestIdConfig(),
+                                    random);
+  Http::TestRequestHeaderMapImpl request_headers;
+  Http::TestResponseHeaderMapImpl response_headers;
 
   uuid_utils.setInResponse(response_headers, request_headers);
-  EXPECT_TRUE(response_headers.get(Headers::get().RequestId).empty());
+  EXPECT_TRUE(response_headers.get(Http::Headers::get().RequestId).empty());
 
   request_headers.setRequestId("some-request-id");
   uuid_utils.setInResponse(response_headers, request_headers);
-  EXPECT_EQ("some-request-id", response_headers.get_(Headers::get().RequestId));
+  EXPECT_EQ("some-request-id", response_headers.get_(Http::Headers::get().RequestId));
 
   request_headers.removeRequestId();
   response_headers.setRequestId("another-request-id");
   uuid_utils.setInResponse(response_headers, request_headers);
-  EXPECT_EQ("another-request-id", response_headers.get_(Headers::get().RequestId));
+  EXPECT_EQ("another-request-id", response_headers.get_(Http::Headers::get().RequestId));
 
   request_headers.setRequestId("");
   uuid_utils.setInResponse(response_headers, request_headers);
-  EXPECT_EQ("", response_headers.get_(Headers::get().RequestId));
+  EXPECT_EQ("", response_headers.get_(Http::Headers::get().RequestId));
 }
 
 TEST(UUIDRequestIDExtensionTest, ModRequestIDBy) {
   Random::RandomGeneratorImpl random;
-  UUIDRequestIDExtension uuid_utils(random);
-  TestRequestHeaderMapImpl request_headers;
+  UUIDRequestIDExtension uuid_utils(envoy::extensions::request_id::uuid::v3::UuidRequestIdConfig(),
+                                    random);
+  Http::TestRequestHeaderMapImpl request_headers;
 
   uint64_t result;
   EXPECT_FALSE(uuid_utils.modBy(request_headers, result, 10000));
@@ -116,8 +122,9 @@ TEST(UUIDRequestIDExtensionTest, ModRequestIDBy) {
 
 TEST(UUIDRequestIDExtensionTest, RequestIDModDistribution) {
   Random::RandomGeneratorImpl random;
-  UUIDRequestIDExtension uuid_utils(random);
-  TestRequestHeaderMapImpl request_headers;
+  UUIDRequestIDExtension uuid_utils(envoy::extensions::request_id::uuid::v3::UuidRequestIdConfig(),
+                                    random);
+  Http::TestRequestHeaderMapImpl request_headers;
 
   const int mod = 100;
   const int required_percentage = 11;
@@ -154,29 +161,31 @@ TEST(UUIDRequestIDExtensionTest, DISABLED_benchmark) {
 
 TEST(UUIDRequestIDExtensionTest, SetTraceStatus) {
   Random::RandomGeneratorImpl random;
-  UUIDRequestIDExtension uuid_utils(random);
-  TestRequestHeaderMapImpl request_headers;
+  UUIDRequestIDExtension uuid_utils(envoy::extensions::request_id::uuid::v3::UuidRequestIdConfig(),
+                                    random);
+  Http::TestRequestHeaderMapImpl request_headers;
   request_headers.setRequestId(random.uuid());
 
-  EXPECT_EQ(TraceStatus::NoTrace, uuid_utils.getTraceStatus(request_headers));
+  EXPECT_EQ(Tracing::Reason::NoTrace, uuid_utils.getTraceReason(request_headers));
 
-  uuid_utils.setTraceStatus(request_headers, TraceStatus::Sampled);
-  EXPECT_EQ(TraceStatus::Sampled, uuid_utils.getTraceStatus(request_headers));
+  uuid_utils.setTraceReason(request_headers, Tracing::Reason::Sampled);
+  EXPECT_EQ(Tracing::Reason::Sampled, uuid_utils.getTraceReason(request_headers));
 
-  uuid_utils.setTraceStatus(request_headers, TraceStatus::Client);
-  EXPECT_EQ(TraceStatus::Client, uuid_utils.getTraceStatus(request_headers));
+  uuid_utils.setTraceReason(request_headers, Tracing::Reason::Client);
+  EXPECT_EQ(Tracing::Reason::Client, uuid_utils.getTraceReason(request_headers));
 
-  uuid_utils.setTraceStatus(request_headers, TraceStatus::Forced);
-  EXPECT_EQ(TraceStatus::Forced, uuid_utils.getTraceStatus(request_headers));
+  uuid_utils.setTraceReason(request_headers, Tracing::Reason::Forced);
+  EXPECT_EQ(Tracing::Reason::Forced, uuid_utils.getTraceReason(request_headers));
 
-  uuid_utils.setTraceStatus(request_headers, TraceStatus::NoTrace);
-  EXPECT_EQ(TraceStatus::NoTrace, uuid_utils.getTraceStatus(request_headers));
+  uuid_utils.setTraceReason(request_headers, Tracing::Reason::NoTrace);
+  EXPECT_EQ(Tracing::Reason::NoTrace, uuid_utils.getTraceReason(request_headers));
 
   // Invalid request ID.
   request_headers.setRequestId("");
-  uuid_utils.setTraceStatus(request_headers, TraceStatus::Forced);
+  uuid_utils.setTraceReason(request_headers, Tracing::Reason::Forced);
   EXPECT_EQ(request_headers.getRequestIdValue(), "");
 }
 
-} // namespace Http
+} // namespace RequestId
+} // namespace Extensions
 } // namespace Envoy

@@ -260,8 +260,8 @@ TEST_F(StreamInfoImplTest, DefaultRequestIDExtensionTest) {
   uint64_t out = 123;
   EXPECT_FALSE(rid_extension->modBy(request_headers, out, 10000));
   EXPECT_EQ(out, 123);
-  rid_extension->setTraceStatus(request_headers, Http::TraceStatus::Forced);
-  EXPECT_EQ(rid_extension->getTraceStatus(request_headers), Http::TraceStatus::NoTrace);
+  rid_extension->setTraceReason(request_headers, Tracing::Reason::Forced);
+  EXPECT_EQ(rid_extension->getTraceReason(request_headers), Tracing::Reason::NoTrace);
 }
 
 TEST_F(StreamInfoImplTest, ConnectionID) {

@@ -13,6 +13,8 @@
 #include "common/network/utility.h"
 #include "common/runtime/runtime_impl.h"
 
+#include "extensions/request_id/uuid/config.h"
+
 #include "test/mocks/http/mocks.h"
 #include "test/mocks/local_info/mocks.h"
 #include "test/mocks/network/mocks.h"
@@ -38,7 +40,7 @@ namespace Http {
 class MockRequestIDExtension : public RequestIDExtension {
 public:
   explicit MockRequestIDExtension(Random::RandomGenerator& random)
-      : real_(RequestIDExtensionFactory::defaultInstance(random)) {
+      : real_(Extensions::RequestId::UUIDRequestIDExtension::defaultInstance(random)) {
     ON_CALL(*this, set(_, _))
         .WillByDefault([this](Http::RequestHeaderMap& request_headers, bool force) {
           return real_->set(request_headers, force);
@@ -51,21 +53,21 @@ public:
     ON_CALL(*this, modBy(_, _, _))
         .WillByDefault([this](const Http::RequestHeaderMap& request_headers, uint64_t& out,
                               uint64_t mod) { return real_->modBy(request_headers, out, mod); });
-    ON_CALL(*this, getTraceStatus(_))
+    ON_CALL(*this, getTraceReason(_))
         .WillByDefault([this](const Http::RequestHeaderMap& request_headers) {
-          return real_->getTraceStatus(request_headers);
+          return real_->getTraceReason(request_headers);
         });
-    ON_CALL(*this, setTraceStatus(_, _))
+    ON_CALL(*this, setTraceReason(_, _))
         .WillByDefault([this](Http::RequestHeaderMap& request_headers, TraceStatus trace_status) {
-          real_->setTraceStatus(request_headers, trace_status);
+          real_->setTraceReason(request_headers, trace_status);
         });
   }
 
   MOCK_METHOD(void, set, (Http::RequestHeaderMap&, bool));
   MOCK_METHOD(void, setInResponse, (Http::ResponseHeaderMap&, const Http::RequestHeaderMap&));
   MOCK_METHOD(bool, modBy, (const Http::RequestHeaderMap&, uint64_t&, uint64_t));
-  MOCK_METHOD(TraceStatus, getTraceStatus, (const Http::RequestHeaderMap&));
-  MOCK_METHOD(void, setTraceStatus, (Http::RequestHeaderMap&, TraceStatus));
+  MOCK_METHOD(TraceStatus, getTraceReason, (const Http::RequestHeaderMap&));
+  MOCK_METHOD(void, setTraceReason, (Http::RequestHeaderMap&, TraceStatus));
 
 private:
   RequestIDExtensionSharedPtr real_;
@@ -1177,10 +1179,10 @@ TEST_F(ConnectionManagerUtilityTest, RandomSamplingWhenGlobalSet) {
   Http::TestRequestHeaderMapImpl request_headers{
       {"x-request-id", "125a4afb-6f55-44ba-ad80-413f09f48a28"}};
   EXPECT_CALL(*request_id_extension_,
-              setTraceStatus(testing::Ref(request_headers), TraceStatus::Sampled));
+              setTraceReason(testing::Ref(request_headers), TraceStatus::Sampled));
   callMutateRequestHeaders(request_headers, Protocol::Http2);
 
-  EXPECT_EQ(TraceStatus::Sampled, request_id_extension_->getTraceStatus(request_headers));
+  EXPECT_EQ(TraceStatus::Sampled, request_id_extension_->getTraceReason(request_headers));
 }
 
 TEST_F(ConnectionManagerUtilityTest, SamplingWithoutRouteOverride) {
@@ -1196,10 +1198,10 @@ TEST_F(ConnectionManagerUtilityTest, SamplingWithoutRouteOverride) {
   Http::TestRequestHeaderMapImpl request_headers{
       {"x-request-id", "125a4afb-6f55-44ba-ad80-413f09f48a28"}};
   EXPECT_CALL(*request_id_extension_,
-              setTraceStatus(testing::Ref(request_headers), TraceStatus::Sampled));
+              setTraceReason(testing::Ref(request_headers), TraceStatus::Sampled));
   callMutateRequestHeaders(request_headers, Protocol::Http2);
 
-  EXPECT_EQ(TraceStatus::Sampled, request_id_extension_->getTraceStatus(request_headers));
+  EXPECT_EQ(TraceStatus::Sampled, request_id_extension_->getTraceReason(request_headers));
 }
 
 TEST_F(ConnectionManagerUtilityTest, SamplingWithRouteOverride) {
@@ -1222,10 +1224,10 @@ TEST_F(ConnectionManagerUtilityTest, SamplingWithRouteOverride) {
   Http::TestRequestHeaderMapImpl request_headers{
       {"x-request-id", "125a4afb-6f55-44ba-ad80-413f09f48a28"}};
   EXPECT_CALL(*request_id_extension_,
-              setTraceStatus(testing::Ref(request_headers), TraceStatus::NoTrace));
+              setTraceReason(testing::Ref(request_headers), TraceStatus::NoTrace));
   callMutateRequestHeaders(request_headers, Protocol::Http2);
 
-  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceStatus(request_headers));
+  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceReason(request_headers));
 }
 
 // Sampling must not be done on client traced.
@@ -1242,10 +1244,10 @@ TEST_F(ConnectionManagerUtilityTest, SamplingMustNotBeDoneOnClientTraced) {
   // The x_request_id has TRACE_FORCED(a) set in the TRACE_BYTE_POSITION(14) character.
   Http::TestRequestHeaderMapImpl request_headers{
       {"x-request-id", "125a4afb-6f55-a4ba-ad80-413f09f48a28"}};
-  EXPECT_CALL(*request_id_extension_, setTraceStatus(_, _)).Times(0);
+  EXPECT_CALL(*request_id_extension_, setTraceReason(_, _)).Times(0);
   callMutateRequestHeaders(request_headers, Protocol::Http2);
 
-  EXPECT_EQ(TraceStatus::Forced, request_id_extension_->getTraceStatus(request_headers));
+  EXPECT_EQ(TraceStatus::Forced, request_id_extension_->getTraceReason(request_headers));
 }
 
 // Sampling, global off.
@@ -1262,12 +1264,12 @@ TEST_F(ConnectionManagerUtilityTest, NoTraceWhenSamplingSetButGlobalNotSet) {
   Http::TestRequestHeaderMapImpl request_headers{
       {"x-request-id", "125a4afb-6f55-44ba-ad80-413f09f48a28"}};
   EXPECT_CALL(*request_id_extension_,
-              setTraceStatus(testing::Ref(request_headers), TraceStatus::Sampled));
+              setTraceReason(testing::Ref(request_headers), TraceStatus::Sampled));
   EXPECT_CALL(*request_id_extension_,
-              setTraceStatus(testing::Ref(request_headers), TraceStatus::NoTrace));
+              setTraceReason(testing::Ref(request_headers), TraceStatus::NoTrace));
   callMutateRequestHeaders(request_headers, Protocol::Http2);
 
-  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceStatus(request_headers));
+  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceReason(request_headers));
 }
 
 // Client, client enabled, global on.
@@ -1284,10 +1286,10 @@ TEST_F(ConnectionManagerUtilityTest, ClientSamplingWhenGlobalSet) {
       {"x-client-trace-id", "f4dca0a9-12c7-4307-8002-969403baf480"},
       {"x-request-id", "125a4afb-6f55-44ba-ad80-413f09f48a28"}};
   EXPECT_CALL(*request_id_extension_,
-              setTraceStatus(testing::Ref(request_headers), TraceStatus::Client));
+              setTraceReason(testing::Ref(request_headers), TraceStatus::Client));
   callMutateRequestHeaders(request_headers, Protocol::Http2);
 
-  EXPECT_EQ(TraceStatus::Client, request_id_extension_->getTraceStatus(request_headers));
+  EXPECT_EQ(TraceStatus::Client, request_id_extension_->getTraceReason(request_headers));
 }
 
 // Client, client disabled, global on.
@@ -1307,10 +1309,10 @@ TEST_F(ConnectionManagerUtilityTest, NoTraceWhenClientSamplingNotSetAndGlobalSet
   Http::TestRequestHeaderMapImpl request_headers{
       {"x-client-trace-id", "f4dca0a9-12c7-4307-8002-969403baf480"},
       {"x-request-id", "125a4afb-6f55-44ba-ad80-413f09f48a28"}};
-  EXPECT_CALL(*request_id_extension_, setTraceStatus(_, _)).Times(0);
+  EXPECT_CALL(*request_id_extension_, setTraceReason(_, _)).Times(0);
   callMutateRequestHeaders(request_headers, Protocol::Http2);
 
-  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceStatus(request_headers));
+  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceReason(request_headers));
 }
 
 // Forced, global on.
@@ -1325,11 +1327,11 @@ TEST_F(ConnectionManagerUtilityTest, ForcedTracedWhenGlobalSet) {
       runtime_.snapshot_,
       featureEnabled("tracing.global_enabled", An<const envoy::type::v3::FractionalPercent&>(), _))
       .WillOnce(Return(true));
-  EXPECT_CALL(*request_id_extension_, setTraceStatus(testing::Ref(headers), TraceStatus::Forced));
+  EXPECT_CALL(*request_id_extension_, setTraceReason(testing::Ref(headers), TraceStatus::Forced));
 
   EXPECT_EQ((MutateRequestRet{"10.0.0.1:0", true}),
             callMutateRequestHeaders(headers, Protocol::Http2));
-  EXPECT_EQ(TraceStatus::Forced, request_id_extension_->getTraceStatus(headers));
+  EXPECT_EQ(TraceStatus::Forced, request_id_extension_->getTraceReason(headers));
 }
 
 // Forced, global off.
@@ -1344,32 +1346,32 @@ TEST_F(ConnectionManagerUtilityTest, NoTraceWhenForcedTracedButGlobalNotSet) {
       runtime_.snapshot_,
       featureEnabled("tracing.global_enabled", An<const envoy::type::v3::FractionalPercent&>(), _))
       .WillOnce(Return(false));
-  EXPECT_CALL(*request_id_extension_, setTraceStatus(testing::Ref(headers), TraceStatus::Forced));
-  EXPECT_CALL(*request_id_extension_, setTraceStatus(testing::Ref(headers), TraceStatus::NoTrace));
+  EXPECT_CALL(*request_id_extension_, setTraceReason(testing::Ref(headers), TraceStatus::Forced));
+  EXPECT_CALL(*request_id_extension_, setTraceReason(testing::Ref(headers), TraceStatus::NoTrace));
 
   EXPECT_EQ((MutateRequestRet{"10.0.0.1:0", true}),
             callMutateRequestHeaders(headers, Protocol::Http2));
-  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceStatus(headers));
+  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceReason(headers));
 }
 
 // Forced, global on, broken uuid.
 TEST_F(ConnectionManagerUtilityTest, NoTraceOnBrokenUuid) {
   Http::TestRequestHeaderMapImpl request_headers{{"x-envoy-force-trace", "true"},
                                                  {"x-request-id", "bb"}};
-  EXPECT_CALL(*request_id_extension_, setTraceStatus(_, _)).Times(0);
+  EXPECT_CALL(*request_id_extension_, setTraceReason(_, _)).Times(0);
   callMutateRequestHeaders(request_headers, Protocol::Http2);
 
-  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceStatus(request_headers));
+  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceReason(request_headers));
 }
 
 TEST_F(ConnectionManagerUtilityTest, RemovesProxyResponseHeaders) {
   Http::TestRequestHeaderMapImpl request_headers{{}};
   Http::TestResponseHeaderMapImpl response_headers{{"keep-alive", "timeout=60"},
                                                    {"proxy-connection", "proxy-header"}};
-  EXPECT_CALL(*request_id_extension_, setTraceStatus(_, _)).Times(0);
+  EXPECT_CALL(*request_id_extension_, setTraceReason(_, _)).Times(0);
   ConnectionManagerUtility::mutateResponseHeaders(response_headers, &request_headers, config_, "");
 
-  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceStatus(request_headers));
+  EXPECT_EQ(TraceStatus::NoTrace, request_id_extension_->getTraceReason(request_headers));
 
   EXPECT_FALSE(response_headers.has("keep-alive"));
   EXPECT_FALSE(response_headers.has("proxy-connection"));
